@@ -48,45 +48,54 @@ static void dump_pubkey( const char *title, mbedtls_ecdsa_context *key )
 
 int sign() {
     int ret = 1;
-    mbedtls_pk_context pk;
-    mbedtls_pk_init( &pk );
-    const unsigned char* mykey = "-----BEGIN PRIVATE KEY-----\n"\
-"MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzmnv4eaEFa1bn0yLLzAlyxMy3b2IEHMwmlOlJv09fb2hRANCAAS8MWhCViqwTKmH85+8U2iJmg8tYFnhJHto09xPJsdWafgIxrsRWztD5/OiPT5fS7NigYNhWlYE4eYDyVY7sklC\n"\
-"-----END PRIVATE KEY-----";
+//     mbedtls_pk_context pk;
+//     mbedtls_pk_init( &pk );
+//     const unsigned char* mykey = "-----BEGIN PRIVATE KEY-----\n"\
+// "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgzmnv4eaEFa1bn0yLLzAlyxMy3b2IEHMwmlOlJv09fb2hRANCAAS8MWhCViqwTKmH85+8U2iJmg8tYFnhJHto09xPJsdWafgIxrsRWztD5/OiPT5fS7NigYNhWlYE4eYDyVY7sklC\n"\
+// "-----END PRIVATE KEY-----";
 
-    if( ( ret = mbedtls_pk_parse_key( &pk, mykey, strlen(mykey)+1, NULL, 0 ) ) != 0 )
-    {
-        printf( " failed\n  ! mbedtls_pk_parse_key returned -0x%04x\n", (unsigned int) -ret );
-    }
+//     if( ( ret = mbedtls_pk_parse_key( &pk, mykey, strlen(mykey)+1, NULL, 0 ) ) != 0 )
+//     {
+//         printf( " failed\n  ! mbedtls_pk_parse_key returned -0x%04x\n", (unsigned int) -ret );
+//     }
 
     mbedtls_ecdsa_context ecdsaprikey;
     mbedtls_ecdsa_init(&ecdsaprikey);
-    const mbedtls_ecp_keypair *pk_ecp = mbedtls_pk_ec(pk);
-    mbedtls_ecdsa_from_keypair(&ecdsaprikey, pk_ecp);
+    // const mbedtls_ecp_keypair *pk_ecp = mbedtls_pk_ec(pk);
+    // mbedtls_ecdsa_from_keypair(&ecdsaprikey, pk_ecp);
 
-    char text[] = "43545430303030304142434445464748073B0F45272556735A0A6663635F6853C7EDE9CA4154E6DEA172512FC1CCC8BAC0B883067C45160DAA12BF78DACD1838016F888F798BDD0D7826D0";
-    unsigned char *textbyte = hexstr_to_char(text);
-    size_t ltextbyte = strlen(text)/2;
-
-    // if( ( ret = mbedtls_sha256_ret( (unsigned char *) text, 13, hashbyte , 0) ) != 0 )
-    // {
-    //     printf( " failed\n  ! mbedtls_sha256_ret returned -0x%04x\n", (unsigned int) -ret );
-    // }
-
-    dump_buf( "  + Text: ", textbyte, ltextbyte );
-
-    mbedtls_mpi r, s;
-    mbedtls_mpi_init(&r);
-    mbedtls_mpi_init(&s);
-    if( ( ret = mbedtls_ecdsa_sign_det( &ecdsaprikey.grp, &r, &s, &ecdsaprikey.d, textbyte, ltextbyte, MBEDTLS_MD_SHA256) != 0 ) )
+    mbedtls_mpi_read_string(&ecdsaprikey.d, 16, "CE69EFE1E68415AD5B9F4C8B2F3025CB1332DDBD881073309A53A526FD3D7DBD");
+    if( ( ret = mbedtls_ecp_group_load( &ecdsaprikey.grp, MBEDTLS_ECP_DP_SECP256R1 ) ) != 0 )
     {
-        printf( " failed\n  ! mbedtls_ecdsa_write_signature returned %d\n", ret );
+        printf( " failed\n  ! mbedtls_ecp_group_load returned -0x%04x\n", (unsigned int) -ret );
+    }
+
+    mbedtls_mpi r;
+    mbedtls_mpi_init(&r);
+    mbedtls_mpi s;
+    mbedtls_mpi_init(&s);
+    char text[] = "43545430303030304142434445464748073B0F45272556735A0A6663635F6853C7EDE9CA4154E6DEA172512FC1CCC8BAC0B883067C45160DAA12BF78DACD1838016F888F798BDD0D7826D0";
+    unsigned char hashbyte[32];
+    unsigned char *textbyte = hexstr_to_char(text);
+
+    if( ( ret = mbedtls_sha256_ret( (unsigned char *) textbyte, 75, hashbyte , 0) ) != 0 )
+    {
+        printf( " failed\n  ! mbedtls_sha256_ret returned -0x%04x\n", (unsigned int) -ret );
+    }
+
+    dump_buf( "  + Hash: ", hashbyte, sizeof(hashbyte) );
+
+    if( ( ret = mbedtls_ecdsa_sign_det( &ecdsaprikey.grp, &r, &s, &ecdsaprikey.d, hashbyte, sizeof(hashbyte), MBEDTLS_MD_SHA256 ) ) != 0 )
+    {
+        printf( " failed\n  ! mbedtls_ecdsa_sign_det returned -0x%04x\n", (unsigned int) -ret );
     }
 
     char tmp[1000];
     size_t olen;
+    mbedtls_mpi_write_string(&r, 16, tmp, sizeof(tmp), &olen);
+    printf("  + R: %s\n", tmp);
     mbedtls_mpi_write_string(&s, 16, tmp, sizeof(tmp), &olen);
-    dump_buf( "  + R: ", tmp, sizeof(tmp) );
+    printf("  + S: %s\n", tmp);
 
     // mbedtls_printf( " ok (signature length = %u)\n", (unsigned int) sig_len );
 
@@ -141,10 +150,10 @@ int verify() {
 
     mbedtls_mpi r;
     mbedtls_mpi_init(&r);
-    mbedtls_mpi_read_string(&r, 16, "E23D572740FC5AA4D268EA020550D720A5FF67E5F76E60C25B60F58FC0659741");
+    mbedtls_mpi_read_string(&r, 16, "4766CA8E3DC1F1BD61F11DE43266D1328F30355E1341D8E64CD4EA04EF78C845");
     mbedtls_mpi s;
     mbedtls_mpi_init(&s);
-    mbedtls_mpi_read_string(&s, 16, "C0BB42AC2925D68C1B4B429A6AF09EBEB9F799D00CB31E5361C54310693FA198");
+    mbedtls_mpi_read_string(&s, 16, "6B5344AC8B183E6BDB8184FB49500EB7F5CD636D0694809B81117079988E8B2F");
     if( ( ret = mbedtls_ecdsa_verify(&ecdsapubkey.grp, hashbyte, 32, &ecdsapubkey.Q, &r, &s) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ecdsa_read_signature returned -0x%04x\n", (unsigned int) -ret );
@@ -155,5 +164,6 @@ int verify() {
 }
 
 int main() {
+    sign();
     verify();
 }
