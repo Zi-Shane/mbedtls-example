@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/pk.h"
@@ -58,6 +60,17 @@ int sign() {
 //     {
 //         printf( " failed\n  ! mbedtls_pk_parse_key returned -0x%04x\n", (unsigned int) -ret );
 //     }
+    mbedtls_entropy_context entropy;
+    mbedtls_entropy_init( &entropy );
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ctr_drbg_init( &ctr_drbg );
+    const char *pers = "ecdsa";
+    if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
+                               (const unsigned char *) pers,
+                               strlen( pers ) ) ) != 0 )
+    {
+        printf( " failed\n  ! mbedtls_ctr_drbg_seed returned %d\n", ret );
+    }
 
     mbedtls_ecdsa_context ecdsaprikey;
     mbedtls_ecdsa_init(&ecdsaprikey);
@@ -85,9 +98,22 @@ int sign() {
 
     dump_buf( "  + Hash: ", hashbyte, sizeof(hashbyte) );
 
-    if( ( ret = mbedtls_ecdsa_sign_det( &ecdsaprikey.grp, &r, &s, &ecdsaprikey.d, hashbyte, sizeof(hashbyte), MBEDTLS_MD_SHA256 ) ) != 0 )
+    /*
+     * Computes the ECDSA signature
+     * Deterministic version
+     */
+    // if( ( ret = mbedtls_ecdsa_sign_det( &ecdsaprikey.grp, &r, &s, &ecdsaprikey.d, hashbyte, sizeof(hashbyte), MBEDTLS_MD_SHA256 ) ) != 0 )
+    // {
+    //     printf( " failed\n  ! mbedtls_ecdsa_sign_det returned -0x%04x\n", (unsigned int) -ret );
+    // }
+
+    /*
+     * Computes the ECDSA signature
+     * with Random Number Generator version
+     */
+    if( ( ret = mbedtls_ecdsa_sign( &ecdsaprikey.grp, &r, &s, &ecdsaprikey.d, hashbyte, sizeof(hashbyte), mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
     {
-        printf( " failed\n  ! mbedtls_ecdsa_sign_det returned -0x%04x\n", (unsigned int) -ret );
+        printf( " failed\n  ! mbedtls_ecdsa_sign returned -0x%04x\n", (unsigned int) -ret );
     }
 
     char tmp[1000];
@@ -150,10 +176,10 @@ int verify() {
 
     mbedtls_mpi r;
     mbedtls_mpi_init(&r);
-    mbedtls_mpi_read_string(&r, 16, "4766CA8E3DC1F1BD61F11DE43266D1328F30355E1341D8E64CD4EA04EF78C845");
+    mbedtls_mpi_read_string(&r, 16, "DECE52910E62F5696082481FC22F60E29DD4E09B28CCF8D8FFCCAFE6C7699231");
     mbedtls_mpi s;
     mbedtls_mpi_init(&s);
-    mbedtls_mpi_read_string(&s, 16, "6B5344AC8B183E6BDB8184FB49500EB7F5CD636D0694809B81117079988E8B2F");
+    mbedtls_mpi_read_string(&s, 16, "893946FD46D67053DEB4EB046DE3EE8A5308D9C3CDEA89B49406FE8B14F51D2F");
     if( ( ret = mbedtls_ecdsa_verify(&ecdsapubkey.grp, hashbyte, 32, &ecdsapubkey.Q, &r, &s) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ecdsa_read_signature returned -0x%04x\n", (unsigned int) -ret );
@@ -164,6 +190,6 @@ int verify() {
 }
 
 int main() {
-    sign();
+    // sign();
     verify();
 }
