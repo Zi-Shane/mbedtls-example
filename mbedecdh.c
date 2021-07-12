@@ -6,7 +6,6 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/ecdh.h"
 #include "mbedtls/md.h"
-#include "mbedtls/hkdf.h"
 
 static void dump_buf( const char *title, unsigned char *buf, size_t len )
 {
@@ -41,15 +40,105 @@ void getbytes(unsigned char* bytes, int value)
     bytes[3] = value & 0xFF;
 }
 
-int KDF(unsigned char* sharedZ);
-int getkey();
+/*
+ * KDF
+ */
+int generateKeyKDF(unsigned char* sharedZ)
+{
+    int ret;
 
-int getkey()
+    /*
+     * One-pass-DH
+     * otherInfo = ( AlgID || partyU's System Title || partyV's System Title )
+     * Static-DH
+     * otherInfo = ( AlgID || partyU's System Title || 0x08 + TransactionId || partyV's System Title )
+     */
+    // 6085740508030043545430303030304142434445464748
+    // 6085740508030043545430303030300836303739433330414142434445464748
+    size_t len_otherInfo;
+    unsigned char* otherInfo = hexstr_to_char("6085740508030043545430303030300836303739433330414142434445464748", &len_otherInfo);
+
+    const mbedtls_md_info_t *md_info;
+    mbedtls_md_context_t md_ctx;
+    mbedtls_md_init( &md_ctx );
+    md_info = mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 );
+    if( ( ret = mbedtls_md_setup( &md_ctx, md_info, 0 ) ) != 0 )
+    {
+        printf( " failed\n  ! mbedtls_md_setup returned -0x%04x\n", (unsigned int) -ret );
+        return ret;
+    }
+
+    // NIST.SP.800-56A KDF
+    unsigned char v[4];
+    size_t hashlen, keylen, reps;
+    hashlen = mbedtls_md_get_size( md_info );
+    keylen = 32; // ECDH with P-256, so result is 256 bits (32 bytes)
+    unsigned char key[keylen];
+    unsigned char hash_output[MBEDTLS_MD_MAX_SIZE];
+    reps = keylen/hashlen;
+
+    for (int pos = 1; pos <= reps; pos++)
+    {
+        // Calculate hash
+        if( ( ret = mbedtls_md_starts( &md_ctx ) ) != 0 )
+        {
+            printf( " failed\n  ! mbedtls_md_starts returned -0x%04x\n", (unsigned int) -ret );
+            return ret;
+        }
+        // Add salt
+        getbytes(v, pos);
+        if( ( ret = mbedtls_md_update( &md_ctx, v, sizeof(v) ) ) != 0 )
+        {
+            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
+            return ret;
+        }
+        if( ( ret = mbedtls_md_update( &md_ctx, sharedZ, 32 ) ) != 0 )
+        {
+            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
+            return ret;
+        }
+        if( ( ret = mbedtls_md_update( &md_ctx, otherInfo, len_otherInfo ) ) != 0 )
+        {
+            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
+            return ret;
+        }
+        if( ( ret = mbedtls_md_finish( &md_ctx, hash_output ) ) != 0 )
+        {
+            printf( " failed\n  ! mbedtls_md_finish returned -0x%04x\n", (unsigned int) -ret );
+            return ret;
+        }
+        // fill key length
+        if ( pos < reps )
+        {
+            memcpy( hash_output, key + hashlen * ( pos - 1 ), hashlen );
+            return ret;
+        }
+        else
+        {
+            if ( keylen % hashlen == 0)
+            {
+                memcpy( key + hashlen * ( pos - 1 ), hash_output , hashlen );
+            }
+            else
+            {
+                memcpy( key + hashlen * ( pos - 1 ), hash_output , keylen % hashlen );
+            }
+        }
+    }
+
+    dump_buf("  + Key: ", key, 32);
+
+    printf( " ok\n" );
+
+    return ret;
+}
+
+int generateSharedSecret()
 {
     int ret = 1;
 
     /*
-     * Random number generator
+     * Init Random number generator
      */
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ctr_drbg_init( &ctr_drbg );
@@ -61,7 +150,7 @@ int getkey()
                                sizeof pers ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ctr_drbg_seed returned -0x%04x\n", (unsigned int) -ret );
-
+        return ret;
     }
 
     /*
@@ -76,12 +165,14 @@ int getkey()
     if( ( ret = mbedtls_mpi_read_string(&ctx_srv.d, 16, "CE69EFE1E68415AD5B9F4C8B2F3025CB1332DDBD881073309A53A526FD3D7DBD") ) != 0 )
     {
         printf( " failed\n  ! mbedtls_mpi_read_string returned -0x%04x\n", (unsigned int) -ret );
+        return ret;
     }
 
     // read public key of the peer
     if( ( ret = mbedtls_ecp_point_read_string( &ctx_srv.Qp, 16, "BC316842562AB04CA987F39FBC5368899A0F2D6059E1247B68D3DC4F26C75669", "F808C6BB115B3B43E7F3A23D3E5F4BB3628183615A5604E1E603C9563BB24942" ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ecp_point_read_string returned -0x%04x\n", (unsigned int) -ret );
+        return ret;
     }
 
     // no need
@@ -118,97 +209,17 @@ int getkey()
     if( ret != 0 )
     {
         printf( " failed\n  ! mbedtls_ecdh_calc_secret returned %d\n", ret );
+        return ret;
     }
     dump_buf("  + Z: ", sharedZ, 32);
 
-    KDF(sharedZ);
+    generateKeyKDF(sharedZ);
 }
 
-int KDF(unsigned char* sharedZ)
-{
-    int ret;
 
-    /*
-     * KDF
-     *
-     * One-pass-DH
-     * otherInfo = ( AlgID || partyU's System Title || partyV's System Title )
-     * Static-DH
-     * otherInfo = ( AlgID || partyU's System Title || 0x08 + TransactionId || partyV's System Title )
-     */
-    // 6085740508030043545430303030304142434445464748
-    // 6085740508030043545430303030300836303739433330414142434445464748
-    unsigned char v[4];
-    size_t len_otherInfo;
-    unsigned char* otherInfo = hexstr_to_char("6085740508030043545430303030300836303739433330414142434445464748", &len_otherInfo);
-
-    size_t hashlen, keylen, reps;
-    const mbedtls_md_info_t *md_info;
-    mbedtls_md_context_t md_ctx;
-    mbedtls_md_init( &md_ctx );
-    md_info = mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 );
-    if( ( ret = mbedtls_md_setup( &md_ctx, md_info, 0 ) ) != 0 )
-    {
-        printf( " failed\n  ! mbedtls_md_setup returned -0x%04x\n", (unsigned int) -ret );
-    }
-
-    // NIST.SP.800-56A KDF
-    hashlen = mbedtls_md_get_size( md_info );
-    keylen = 32; // ECDH with P-256, so result is 256 bits (32 bytes)
-    unsigned char key[keylen];
-    unsigned char hash_output[MBEDTLS_MD_MAX_SIZE];
-    reps = keylen/hashlen;
-
-    for (int pos = 1; pos <= reps; pos++)
-    {
-        // Calculate hash
-        if( ( ret = mbedtls_md_starts( &md_ctx ) ) != 0 )
-        {
-            printf( " failed\n  ! mbedtls_md_starts returned -0x%04x\n", (unsigned int) -ret );
-        }
-        // Add salt
-        getbytes(v, pos);
-        if( ( ret = mbedtls_md_update( &md_ctx, v, 4 ) ) != 0 )
-        {
-            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
-        }
-        if( ( ret = mbedtls_md_update( &md_ctx, sharedZ, 32 ) ) != 0 )
-        {
-            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
-        }
-        if( ( ret = mbedtls_md_update( &md_ctx, otherInfo, len_otherInfo ) ) != 0 )
-        {
-            printf( " failed\n  ! mbedtls_md_update returned -0x%04x\n", (unsigned int) -ret );
-        }
-        if( ( ret = mbedtls_md_finish( &md_ctx, hash_output ) ) != 0 )
-        {
-            printf( " failed\n  ! mbedtls_md_finish returned -0x%04x\n", (unsigned int) -ret );
-        }
-        // fill key length
-        if ( pos < reps )
-        {
-            memcpy( hash_output, key + hashlen * ( pos - 1 ), hashlen );
-        }
-        else
-        {
-            if ( keylen % hashlen == 0)
-            {
-                memcpy( key + hashlen * ( pos - 1 ), hash_output , hashlen );
-            }
-            else
-            {
-                memcpy( key + hashlen * ( pos - 1 ), hash_output , keylen % hashlen );
-            }
-        }
-    }
-
-    dump_buf("  + Key: ", key, 32);
-
-    printf( " ok\n" );
-}
 
 int main( int argc, char *argv[] )
 {
-    getkey();
+    generateSharedSecret();
 }
 
