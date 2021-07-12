@@ -130,6 +130,8 @@ int generateKeyKDF(unsigned char* sharedZ)
 
     printf( " ok\n" );
 
+    mbedtls_md_free( &md_ctx );
+
     return ret;
 }
 
@@ -214,6 +216,12 @@ int generateSharedSecret()
     dump_buf("  + Z: ", sharedZ, 32);
 
     generateKeyKDF(sharedZ);
+
+    mbedtls_ctr_drbg_free( &ctr_drbg );
+    mbedtls_entropy_free( &entropy );
+    mbedtls_ecdh_free( &ctx_srv );
+
+    return ret;
 }
 
 

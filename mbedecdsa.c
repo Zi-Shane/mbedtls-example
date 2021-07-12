@@ -125,6 +125,13 @@ int sign() {
     dump_buf("  + R: ", signature_byte_r, 32);
     dump_buf("  + S: ", signature_byte_s, 32);
 
+    mbedtls_entropy_free( &entropy );
+    mbedtls_ctr_drbg_free( &ctr_drbg );
+    mbedtls_ecdsa_free( &ecdsaprikey );
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+
+    return ret;
 }
 
 int verify() {
@@ -177,9 +184,15 @@ int verify() {
 
     if (!ret)
         printf( "\n  . OK (the signature is valid)\n\n" );
+
+    mbedtls_ecdsa_free(&ecdsapubkey);
+    mbedtls_mpi_free(&r);
+    mbedtls_mpi_free(&s);
+
+    return ret;
 }
 
 int main() {
     sign();
-    // verify();
+    verify();
 }
