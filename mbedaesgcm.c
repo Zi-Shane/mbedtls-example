@@ -128,9 +128,9 @@ int aesgcm_decrypt_with_auth() {
     unsigned char* aad = hexstr_to_char("30D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF", &aad_len);
     size_t input_len;
     unsigned char* input = hexstr_to_char("801302ff8a7874133d414ced25b42534d28db0047720606b175bd52211be68", &input_len);
-    unsigned char output[input_len];
     size_t tag_len;
     unsigned char* tag = hexstr_to_char("41DB204D39EE6FDB8E356855", &tag_len);
+    unsigned char output[input_len];
 
     mbedtls_gcm_context aes_ctx;
     mbedtls_gcm_init( &aes_ctx );
@@ -158,24 +158,38 @@ int aesgcm_decrypt_with_auth() {
 
     dump_buf("  + output: ", output, input_len );
 
+    mbedtls_gcm_free( &aes_ctx );
+
     return ret;
 }
 
 int main() {
-    size_t len;
-    unsigned char* plain_text = hexstr_to_char("41414141414141414141", &len);
-    unsigned char ciphered_text[len];
-    printf("  . Start  Only GCM - Encrypt mode\n");
-    aesgcm(MBEDTLS_GCM_ENCRYPT, plain_text, len, ciphered_text);
-    dump_buf("  + Input: ", plain_text, len);
-    dump_buf("  + Output: ", ciphered_text, len);
-    printf("  . OK\n\n");
+    // size_t len;
+    // unsigned char* plain_text = hexstr_to_char("41414141414141414141", &len);
+    // unsigned char ciphered_text[len];
+    // printf("  . Start  Only GCM - Encrypt mode\n");
+    // aesgcm(MBEDTLS_GCM_ENCRYPT, plain_text, len, ciphered_text);
+    // dump_buf("  + Input: ", plain_text, len);
+    // dump_buf("  + Output: ", ciphered_text, len);
+    // printf("  . OK\n\n");
 
-    aesgcm(MBEDTLS_GCM_DECRYPT, ciphered_text, len, plain_text);
-    printf("  . Start  Only GCM - Decrypt mode\n");
-    dump_buf("  + Input: ", ciphered_text, len);
-    dump_buf("  + Output: ", plain_text, len);
-    printf("  . OK\n\n");
+    // aesgcm(MBEDTLS_GCM_DECRYPT, ciphered_text, len, plain_text);
+    // printf("  . Start  Only GCM - Decrypt mode\n");
+    // dump_buf("  + Input: ", ciphered_text, len);
+    // dump_buf("  + Output: ", plain_text, len);
+    // printf("  . OK\n\n");
+
+    size_t key_len;
+    unsigned char* key = hexstr_to_char("000102030405060708090A0B0C0D0E0F", &key_len);
+    size_t iv_len;
+    unsigned char* iv = hexstr_to_char("4D4D4D0000BC614E01234567", &iv_len);
+    size_t aad_len;
+    unsigned char* aad = hexstr_to_char("30D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF", &aad_len);
+    size_t input_len;
+    unsigned char* input = hexstr_to_char("801302ff8a7874133d414ced25b42534d28db0047720606b175bd52211be68", &input_len);
+    unsigned char output[input_len];
+    size_t tag_len;
+    unsigned char* tag = hexstr_to_char("41DB204D39EE6FDB8E356855", &tag_len);
 
     printf("  . Start  Encrypt with Tag\n");
     aesgcm_encrypt_with_auth();
